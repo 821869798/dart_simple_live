@@ -47,43 +47,54 @@ function(download_and_verify url md5 locationForArchive)
   endif()
 endfunction()
 
-function(download_and_verify_sha256 url sha256 locationForArchive)
+function(download_and_verify_sha256 urls sha256 locationForArchive)
   if(EXISTS "${locationForArchive}")
     file(SHA256 "${locationForArchive}" ARCHIVE_SHA256)
     if(NOT "${sha256}" STREQUAL "${ARCHIVE_SHA256}")
       file(REMOVE "${locationForArchive}")
       message(STATUS "SHA-256 mismatch. File deleted.")
+    else()
+      return()
     endif()
   endif()
 
-  if(NOT EXISTS "${locationForArchive}")
-    message(STATUS "Downloading archive from ${url}...")
-    file(
-      DOWNLOAD
-      "${url}"
-      "${locationForArchive}"
-      EXPECTED_HASH "SHA256=${sha256}"
-      STATUS DOWNLOAD_STATUS
-      TLS_VERIFY ON
-      TIMEOUT 300
-      INACTIVITY_TIMEOUT 30
-    )
-    list(GET DOWNLOAD_STATUS 0 DOWNLOAD_STATUS_CODE)
-    list(GET DOWNLOAD_STATUS 1 DOWNLOAD_STATUS_MESSAGE)
-    if(NOT DOWNLOAD_STATUS_CODE EQUAL 0)
-      file(REMOVE "${locationForArchive}")
-      message(
-        FATAL_ERROR
-        "Failed to download ${url}: ${DOWNLOAD_STATUS_MESSAGE}"
+  set(DOWNLOAD_SUCCESS FALSE)
+  foreach(url IN LISTS urls)
+    if(NOT DOWNLOAD_SUCCESS)
+      message(STATUS "Downloading archive from ${url}...")
+      file(
+        DOWNLOAD
+        "${url}"
+        "${locationForArchive}"
+        EXPECTED_HASH "SHA256=${sha256}"
+        STATUS DOWNLOAD_STATUS
+        TLS_VERIFY ON
+        TIMEOUT 300
+        INACTIVITY_TIMEOUT 30
       )
+      list(GET DOWNLOAD_STATUS 0 DOWNLOAD_STATUS_CODE)
+      list(GET DOWNLOAD_STATUS 1 DOWNLOAD_STATUS_MESSAGE)
+      if(DOWNLOAD_STATUS_CODE EQUAL 0)
+        file(SHA256 "${locationForArchive}" ARCHIVE_SHA256)
+        if("${sha256}" STREQUAL "${ARCHIVE_SHA256}")
+          set(DOWNLOAD_SUCCESS TRUE)
+          message(STATUS "Downloaded and verified ${locationForArchive}")
+          break()
+        else()
+          file(REMOVE "${locationForArchive}")
+          message(STATUS "SHA-256 mismatch from ${url}.")
+        endif()
+      else()
+        file(REMOVE "${locationForArchive}")
+        message(STATUS "Failed download from ${url}: ${DOWNLOAD_STATUS_MESSAGE}")
+      endif()
     endif()
-  endif()
+  endforeach()
 
-  file(SHA256 "${locationForArchive}" ARCHIVE_SHA256)
-  if(NOT "${sha256}" STREQUAL "${ARCHIVE_SHA256}")
+  if(NOT DOWNLOAD_SUCCESS)
     message(
       FATAL_ERROR
-      "${locationForArchive} SHA-256 verification failed."
+      "Failed to download and verify ${locationForArchive} from all configured sources."
     )
   endif()
 endfunction()
@@ -110,13 +121,23 @@ endfunction()
 
 # libmpv archive containing the pre-built shared libraries & headers.
 # Keep the generic x86_64 build so older Windows CPUs do not require AVX2.
-set(LIBMPV_RELEASE "20260828")
-set(LIBMPV_REVISION "182fa6ca49")
+set(LIBMPV_RELEASE "20261021")
+set(LIBMPV_REVISION "e471496c56")
 set(LIBMPV "mpv-dev-x86_64-${LIBMPV_RELEASE}-git-${LIBMPV_REVISION}.7z")
 
-# Download URL & SHA-256 hash of the libmpv archive.
-set(LIBMPV_URL "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/${LIBMPV_RELEASE}/${LIBMPV}")
-set(LIBMPV_SHA256 "9efd04d351e09eca350d01da1b8b0c406537c037537111ba65ab43c91905635b")
+# Download URLs & SHA-256 hash of the libmpv archive.
+# Primary: upstream shinchiro release; Fallback: permanent release mirror.
+set(LIBMPV_URLS
+  "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/${LIBMPV_RELEASE}/${LIBMPV}"
+  "https://github.com/821869798/dart_simple_live/releases/download/deps/${LIBMPV}"
+)
+if(DEFINED ENV{SIMPLE_LIVE_LIBMPV_URL})
+  list(PREPEND LIBMPV_URLS "$ENV{SIMPLE_LIVE_LIBMPV_URL}")
+elseif(DEFINED SIMPLE_LIVE_LIBMPV_URL)
+  list(PREPEND LIBMPV_URLS "${SIMPLE_LIVE_LIBMPV_URL}")
+endif()
+list(GET LIBMPV_URLS 0 LIBMPV_URL)
+set(LIBMPV_SHA256 "efc719eff3dc5954b4a5efc800632808bcec01cc9034940dd14e5eb7fe9ea633")
 
 # Download location of the libmpv archive.
 set(LIBMPV_ARCHIVE "${CMAKE_BINARY_DIR}/${LIBMPV}")
@@ -157,7 +178,7 @@ if(EXISTS "${LIBMPV_SHARED_ARCHIVE}")
 endif()
 
 download_and_verify_sha256(
-  ${LIBMPV_URL}
+  "${LIBMPV_URLS}"
   ${LIBMPV_SHA256}
   ${LIBMPV_ARCHIVE}
 )

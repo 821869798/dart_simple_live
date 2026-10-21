@@ -79,7 +79,23 @@ jobs:
           $issPath = "simple_live_app/windows/packaging/inno_setup/SimpleLive_Setup.iss"
           $outputName = "SimpleLive-Windows-v${cleanVer}-Setup"
 
-          & iscc "/DMyAppVersion=$cleanVer" "/DSourceDir=$releaseDir" "/DOutputDir=$distDir" "/DOutputFilename=$outputName" $issPath
+          $isccCmd = (Get-Command iscc.exe -ErrorAction SilentlyContinue)?.Source
+          if (-not $isccCmd) {
+            $candidates = @(
+              "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+              "C:\Program Files\Inno Setup 6\ISCC.exe",
+              "C:\ProgramData\chocolatey\bin\iscc.exe"
+            )
+            foreach ($c in $candidates) {
+              if (Test-Path $c) { $isccCmd = $c; break }
+            }
+          }
+          if (-not $isccCmd) {
+            throw "ISCC.exe not found! Please check Inno Setup installation."
+          }
+          Write-Host "Using ISCC compiler: $isccCmd"
+
+          & $isccCmd "/DMyAppVersion=$cleanVer" "/DSourceDir=$releaseDir" "/DOutputDir=$distDir" "/DOutputFilename=$outputName" $issPath
 
           Get-ChildItem -Path $distDir
 
