@@ -8,7 +8,7 @@
 #endif
 
 #ifndef MyAppFullName
-#define MyAppFullName "SimpleLive 简播"
+#define MyAppFullName "SimpleLive"
 #endif
 
 #ifndef MyAppVersion
